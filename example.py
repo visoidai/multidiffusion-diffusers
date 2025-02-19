@@ -6,7 +6,23 @@ import torch
 
 from MultiDiffusionPipeline import MultiStableDiffusion
 #this was never tested lol
-pipe = MultiStableDiffusion.from_pretrained("runwayml/stable-diffusion-v1-5",local_files_only=True, torch_dtype=torch.float16,safety_checker=None,requires_safety_checker=False).to("cuda")
+
+def get_device_and_dtype():
+    device = "cpu"
+    dtype = torch.float16
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+        if torch.cuda.is_bf16_supported():
+            dtype = torch.bfloat16
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+        # dtype = torch.float32
+    else:
+        raise ValueError("WARNING: need to run on GPU")
+    return device, dtype
+device, dtype = get_device_and_dtype()
+
+pipe = MultiStableDiffusion.from_pretrained("SG161222/Realistic_Vision_V5.1_noVAE",local_files_only=True, torch_dtype=torch.float16,safety_checker=None,requires_safety_checker=False).to(device)
 prompt=["a beautiful park","a beautiful sky"]
 negative_prompt=["a beautiful sky", "a beautiful park"]
 
@@ -16,7 +32,11 @@ for i in range(len(prompt)):
     cond, uncond =text_embeddings(pipe,prompt[i],"", clip_stop_at_last_layers=2)
     promptE.append(cond)
     
-buffer=open('Untitled.png', 'rb')
+import os
+dirname = os.path.dirname(__file__)
+filename = os.path.join(dirname, "Untitled.png")
+
+buffer=open(filename, 'rb')
 buffer.seek(0)
 image_bytes = buffer.read()
 imageM = Image.open(BytesIO(image_bytes))

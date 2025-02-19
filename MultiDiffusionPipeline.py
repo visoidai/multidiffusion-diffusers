@@ -23,14 +23,28 @@ from transformers import CLIPImageProcessor, CLIPTextModel, CLIPTokenizer
 import torchvision
 from diffusers import DiffusionPipeline, ControlNetModel
 from diffusers.configuration_utils import FrozenDict
-from diffusers.loaders import LoraLoaderMixin, TextualInversionLoaderMixin,FromCkptMixin
+from diffusers.loaders import LoraLoaderMixin, TextualInversionLoaderMixin
 from diffusers.image_processor import VaeImageProcessor
 from diffusers.models import AutoencoderKL, UNet2DConditionModel
 from diffusers.models.controlnet import ControlNetOutput
 from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput
-from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
-from diffusers.schedulers import DDIMScheduler, LMSDiscreteScheduler, PNDMScheduler,KarrasDiffusionSchedulers
-from diffusers.utils import deprecate, is_accelerate_available, is_accelerate_version, logging, randn_tensor, replace_example_docstring,PIL_INTERPOLATION
+from diffusers.pipelines.stable_diffusion.safety_checker import (
+    StableDiffusionSafetyChecker,
+)
+from diffusers.schedulers import (
+    DDIMScheduler,
+    LMSDiscreteScheduler,
+    PNDMScheduler,
+    KarrasDiffusionSchedulers,
+)
+from diffusers.utils import (
+    deprecate,
+    is_accelerate_available,
+    is_accelerate_version,
+    logging,
+    replace_example_docstring,
+    PIL_INTERPOLATION,
+)
 from diffusers.models import ModelMixin
 import kohya_lora_loader
 
@@ -49,6 +63,8 @@ EXAMPLE_DOC_STRING = """
         >>> image = pipe(prompt).images[0]
         ```
 """
+
+
 class MultiControlNetModel(ModelMixin):
     r"""
     Multiple `ControlNetModel` wrapper class for Multi-ControlNet
@@ -60,7 +76,9 @@ class MultiControlNetModel(ModelMixin):
             `ControlNetModel` as a list.
     """
 
-    def __init__(self, controlnets: Union[List[ControlNetModel], Tuple[ControlNetModel]]):
+    def __init__(
+        self, controlnets: Union[List[ControlNetModel], Tuple[ControlNetModel]]
+    ):
         super().__init__()
         self.nets = nn.ModuleList(controlnets)
 
@@ -78,7 +96,9 @@ class MultiControlNetModel(ModelMixin):
         guess_mode: bool = False,
         return_dict: bool = True,
     ) -> Union[ControlNetOutput, Tuple]:
-        for i, (image, scale, controlnet) in enumerate(zip(controlnet_cond, conditioning_scale, self.nets)):
+        for i, (image, scale, controlnet) in enumerate(
+            zip(controlnet_cond, conditioning_scale, self.nets)
+        ):
             down_samples, mid_sample = controlnet(
                 sample,
                 timestep,
@@ -99,13 +119,18 @@ class MultiControlNetModel(ModelMixin):
             else:
                 down_block_res_samples = [
                     samples_prev + samples_curr
-                    for samples_prev, samples_curr in zip(down_block_res_samples, down_samples)
+                    for samples_prev, samples_curr in zip(
+                        down_block_res_samples, down_samples
+                    )
                 ]
                 mid_block_res_sample += mid_sample
 
-        return down_block_res_samples, mid_block_res_sample # type: ignore[return-value]
+        return down_block_res_samples, mid_block_res_sample  # type: ignore[return-value]
 
-class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraLoaderMixin, FromCkptMixin):
+
+class MultiStableDiffusion(
+    DiffusionPipeline, TextualInversionLoaderMixin, LoraLoaderMixin
+):
     r"""
     Pipeline for text-to-image generation using Stable Diffusion.
 
@@ -115,7 +140,6 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
     In addition the pipeline inherits the following loading methods:
         - *Textual-Inversion*: [`loaders.TextualInversionLoaderMixin.load_textual_inversion`]
         - *LoRA*: [`loaders.LoraLoaderMixin.load_lora_weights`]
-        - *Ckpt*: [`loaders.FromCkptMixin.from_ckpt`]
 
     as well as the following saving methods:
         - *LoRA*: [`loaders.LoraLoaderMixin.save_lora_weights`]
@@ -140,6 +164,7 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
         feature_extractor ([`CLIPImageProcessor`]):
             Model that extracts features from generated images to be used as inputs for the `safety_checker`.
     """
+
     _optional_components = ["safety_checker", "feature_extractor"]
 
     def __init__(
@@ -155,7 +180,10 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
     ):
         super().__init__()
 
-        if hasattr(scheduler.config, "steps_offset") and scheduler.config.steps_offset != 1:
+        if (
+            hasattr(scheduler.config, "steps_offset")
+            and scheduler.config.steps_offset != 1
+        ):
             deprecation_message = (
                 f"The configuration file of this scheduler: {scheduler} is outdated. `steps_offset`"
                 f" should be set to 1 instead of {scheduler.config.steps_offset}. Please make sure "
@@ -164,12 +192,17 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
                 " it would be very nice if you could open a Pull request for the `scheduler/scheduler_config.json`"
                 " file"
             )
-            deprecate("steps_offset!=1", "1.0.0", deprecation_message, standard_warn=False)
+            deprecate(
+                "steps_offset!=1", "1.0.0", deprecation_message, standard_warn=False
+            )
             new_config = dict(scheduler.config)
             new_config["steps_offset"] = 1
             scheduler._internal_dict = FrozenDict(new_config)
 
-        if hasattr(scheduler.config, "clip_sample") and scheduler.config.clip_sample is True:
+        if (
+            hasattr(scheduler.config, "clip_sample")
+            and scheduler.config.clip_sample is True
+        ):
             deprecation_message = (
                 f"The configuration file of this scheduler: {scheduler} has not set the configuration `clip_sample`."
                 " `clip_sample` should be set to False in the configuration file. Please make sure to update the"
@@ -177,7 +210,9 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
                 " future versions. If you have downloaded this checkpoint from the Hugging Face Hub, it would be very"
                 " nice if you could open a Pull request for the `scheduler/scheduler_config.json` file"
             )
-            deprecate("clip_sample not set", "1.0.0", deprecation_message, standard_warn=False)
+            deprecate(
+                "clip_sample not set", "1.0.0", deprecation_message, standard_warn=False
+            )
             new_config = dict(scheduler.config)
             new_config["clip_sample"] = False
             scheduler._internal_dict = FrozenDict(new_config)
@@ -198,10 +233,16 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
                 " checker. If you do not want to use the safety checker, you can pass `'safety_checker=None'` instead."
             )
 
-        is_unet_version_less_0_9_0 = hasattr(unet.config, "_diffusers_version") and version.parse(
+        is_unet_version_less_0_9_0 = hasattr(
+            unet.config, "_diffusers_version"
+        ) and version.parse(
             version.parse(unet.config._diffusers_version).base_version
-        ) < version.parse("0.9.0.dev0")
-        is_unet_sample_size_less_64 = hasattr(unet.config, "sample_size") and unet.config.sample_size < 64
+        ) < version.parse(
+            "0.9.0.dev0"
+        )
+        is_unet_sample_size_less_64 = (
+            hasattr(unet.config, "sample_size") and unet.config.sample_size < 64
+        )
         if is_unet_version_less_0_9_0 and is_unet_sample_size_less_64:
             deprecation_message = (
                 "The configuration file of the unet has set the default `sample_size` to smaller than"
@@ -214,7 +255,9 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
                 " checkpoint from the Hugging Face Hub, it would be very nice if you could open a Pull request for"
                 " the `unet/config.json` file"
             )
-            deprecate("sample_size<64", "1.0.0", deprecation_message, standard_warn=False)
+            deprecate(
+                "sample_size<64", "1.0.0", deprecation_message, standard_warn=False
+            )
             new_config = dict(unet.config)
             new_config["sample_size"] = 64
             unet._internal_dict = FrozenDict(new_config)
@@ -228,19 +271,24 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
             safety_checker=safety_checker,
             feature_extractor=feature_extractor,
         )
-        
+
         self.vae_scale_factor = 2 ** (len(self.vae.config.block_out_channels) - 1)
         self.register_to_config(requires_safety_checker=requires_safety_checker)
-        self.controlnet=None
+        self.controlnet = None
         kohya_lora_loader.install_lora_hook(self)
+
     def loadControlnet(self, controlnet):
         if isinstance(controlnet, (list, tuple)):
             controlnet = MultiControlNetModel(controlnet)
-        self.controlnet=controlnet
+        self.controlnet = controlnet
+
     def loadImage(self, image):
-        if not hasattr(self, 'image_processor'):
-            self.image_processor = VaeImageProcessor(vae_scale_factor=self.vae_scale_factor)
-        self.image=self.image_processor.preprocess(image)
+        if not hasattr(self, "image_processor"):
+            self.image_processor = VaeImageProcessor(
+                vae_scale_factor=self.vae_scale_factor
+            )
+        self.image = self.image_processor.preprocess(image)
+
     def prepare_controlnet_image(
         self,
         image,
@@ -261,7 +309,9 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
 
                 for image_ in image:
                     image_ = image_.convert("RGB")
-                    image_ = image_.resize((width, height), resample=PIL_INTERPOLATION["lanczos"])
+                    image_ = image_.resize(
+                        (width, height), resample=PIL_INTERPOLATION["lanczos"]
+                    )
                     image_ = np.array(image_)
                     image_ = image_[None, :]
                     images.append(image_)
@@ -291,6 +341,7 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
             image = torch.cat([image] * 2)
 
         return image
+
     def enable_vae_slicing(self):
         r"""
         Enable sliced VAE decoding.
@@ -334,7 +385,9 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
         if is_accelerate_available() and is_accelerate_version(">=", "0.14.0"):
             from accelerate import cpu_offload
         else:
-            raise ImportError("`enable_sequential_cpu_offload` requires `accelerate v0.14.0` or higher")
+            raise ImportError(
+                "`enable_sequential_cpu_offload` requires `accelerate v0.14.0` or higher"
+            )
 
         device = torch.device(f"cuda:{gpu_id}")
 
@@ -346,7 +399,9 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
             cpu_offload(cpu_offloaded_model, device)
 
         if self.safety_checker is not None:
-            cpu_offload(self.safety_checker, execution_device=device, offload_buffers=True)
+            cpu_offload(
+                self.safety_checker, execution_device=device, offload_buffers=True
+            )
 
     def enable_model_cpu_offload(self, gpu_id=0):
         r"""
@@ -358,7 +413,9 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
         if is_accelerate_available() and is_accelerate_version(">=", "0.17.0.dev0"):
             from accelerate import cpu_offload_with_hook
         else:
-            raise ImportError("`enable_model_cpu_offload` requires `accelerate v0.17.0` or higher.")
+            raise ImportError(
+                "`enable_model_cpu_offload` requires `accelerate v0.17.0` or higher."
+            )
 
         device = torch.device(f"cuda:{gpu_id}")
 
@@ -368,10 +425,14 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
 
         hook = None
         for cpu_offloaded_model in [self.text_encoder, self.unet, self.vae]:
-            _, hook = cpu_offload_with_hook(cpu_offloaded_model, device, prev_module_hook=hook)
+            _, hook = cpu_offload_with_hook(
+                cpu_offloaded_model, device, prev_module_hook=hook
+            )
 
         if self.safety_checker is not None:
-            _, hook = cpu_offload_with_hook(self.safety_checker, device, prev_module_hook=hook)
+            _, hook = cpu_offload_with_hook(
+                self.safety_checker, device, prev_module_hook=hook
+            )
 
         # We'll offload the last model manually.
         self.final_offload_hook = hook
@@ -383,16 +444,28 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
         `pipeline.enable_sequential_cpu_offload()` the execution device can only be inferred from Accelerate's module
         hooks.
         """
-        if not hasattr(self.unet, "_hf_hook"):
-            return self.device
-        for module in self.unet.modules():
-            if (
-                hasattr(module, "_hf_hook")
-                and hasattr(module._hf_hook, "execution_device")
-                and module._hf_hook.execution_device is not None
-            ):
-                return torch.device(module._hf_hook.execution_device)
-        return self.device
+        # if not hasattr(self.unet, "_hf_hook"):
+        #     return self.device
+        # for module in self.unet.modules():
+        #     if (
+        #         hasattr(module, "_hf_hook")
+        #         and hasattr(module._hf_hook, "execution_device")
+        #         and module._hf_hook.execution_device is not None
+        #     ):
+        #         return torch.device(module._hf_hook.execution_device)
+        # return self.device
+        device = "cpu"
+        dtype = torch.float16
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+            if torch.cuda.is_bf16_supported():
+                dtype = torch.bfloat16
+        elif torch.backends.mps.is_available():
+            device = torch.device("mps")
+            # dtype = torch.float32
+        else:
+            raise ValueError("WARNING: need to run on GPU")
+        return device
 
     def _encode_prompt(
         self,
@@ -448,11 +521,13 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
                 return_tensors="pt",
             )
             text_input_ids = text_inputs.input_ids
-            untruncated_ids = self.tokenizer(prompt, padding="longest", return_tensors="pt").input_ids
+            untruncated_ids = self.tokenizer(
+                prompt, padding="longest", return_tensors="pt"
+            ).input_ids
 
-            if untruncated_ids.shape[-1] >= text_input_ids.shape[-1] and not torch.equal(
-                text_input_ids, untruncated_ids
-            ):
+            if untruncated_ids.shape[-1] >= text_input_ids.shape[
+                -1
+            ] and not torch.equal(text_input_ids, untruncated_ids):
                 removed_text = self.tokenizer.batch_decode(
                     untruncated_ids[:, self.tokenizer.model_max_length - 1 : -1]
                 )
@@ -461,7 +536,10 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
                     f" {self.tokenizer.model_max_length} tokens: {removed_text}"
                 )
 
-            if hasattr(self.text_encoder.config, "use_attention_mask") and self.text_encoder.config.use_attention_mask:
+            if (
+                hasattr(self.text_encoder.config, "use_attention_mask")
+                and self.text_encoder.config.use_attention_mask
+            ):
                 attention_mask = text_inputs.attention_mask.to(device)
             else:
                 attention_mask = None
@@ -477,7 +555,9 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
         bs_embed, seq_len, _ = prompt_embeds.shape
         # duplicate text embeddings for each generation per prompt, using mps friendly method
         prompt_embeds = prompt_embeds.repeat(1, num_images_per_prompt, 1)
-        prompt_embeds = prompt_embeds.view(bs_embed * num_images_per_prompt, seq_len, -1)
+        prompt_embeds = prompt_embeds.view(
+            bs_embed * num_images_per_prompt, seq_len, -1
+        )
 
         # get unconditional embeddings for classifier free guidance
         if do_classifier_free_guidance and negative_prompt_embeds is None:
@@ -513,7 +593,10 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
                 return_tensors="pt",
             )
 
-            if hasattr(self.text_encoder.config, "use_attention_mask") and self.text_encoder.config.use_attention_mask:
+            if (
+                hasattr(self.text_encoder.config, "use_attention_mask")
+                and self.text_encoder.config.use_attention_mask
+            ):
                 attention_mask = uncond_input.attention_mask.to(device)
             else:
                 attention_mask = None
@@ -528,10 +611,16 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
             # duplicate unconditional embeddings for each generation per prompt, using mps friendly method
             seq_len = negative_prompt_embeds.shape[1]
 
-            negative_prompt_embeds = negative_prompt_embeds.to(dtype=self.text_encoder.dtype, device=device)
+            negative_prompt_embeds = negative_prompt_embeds.to(
+                dtype=self.text_encoder.dtype, device=device
+            )
 
-            negative_prompt_embeds = negative_prompt_embeds.repeat(1, num_images_per_prompt, 1)
-            negative_prompt_embeds = negative_prompt_embeds.view(batch_size * num_images_per_prompt, seq_len, -1)
+            negative_prompt_embeds = negative_prompt_embeds.repeat(
+                1, num_images_per_prompt, 1
+            )
+            negative_prompt_embeds = negative_prompt_embeds.view(
+                batch_size * num_images_per_prompt, seq_len, -1
+            )
 
             # For classifier free guidance, we need to do two forward passes.
             # Here we concatenate the unconditional and text embeddings into a single batch
@@ -542,7 +631,9 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
 
     def run_safety_checker(self, image, device, dtype):
         if self.safety_checker is not None:
-            safety_checker_input = self.feature_extractor(self.numpy_to_pil(image), return_tensors="pt").to(device)
+            safety_checker_input = self.feature_extractor(
+                self.numpy_to_pil(image), return_tensors="pt"
+            ).to(device)
             image, has_nsfw_concept = self.safety_checker(
                 images=image, clip_input=safety_checker_input.pixel_values.to(dtype)
             )
@@ -560,17 +651,21 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
 
     def prepare_extra_step_kwargs(self, generator, eta):
         # prepare extra kwargs for the scheduler step, since not all schedulers have the same signature
-        # eta (η) is only used with the DDIMScheduler, it will be ignored for other schedulers.
+        # eta (η) is only used with the DDIMScheduler, it will be ignored for others.
         # eta corresponds to η in DDIM paper: https://arxiv.org/abs/2010.02502
         # and should be between [0, 1]
 
-        accepts_eta = "eta" in set(inspect.signature(self.scheduler.step).parameters.keys())
+        accepts_eta = "eta" in set(
+            inspect.signature(self.scheduler.step).parameters.keys()
+        )
         extra_step_kwargs = {}
         if accepts_eta:
             extra_step_kwargs["eta"] = eta
 
         # check if the scheduler accepts generator
-        accepts_generator = "generator" in set(inspect.signature(self.scheduler.step).parameters.keys())
+        accepts_generator = "generator" in set(
+            inspect.signature(self.scheduler.step).parameters.keys()
+        )
         if accepts_generator:
             extra_step_kwargs["generator"] = generator
         return extra_step_kwargs
@@ -591,25 +686,35 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
         image=None,
     ):
         if strength < 0 or strength > 1:
-            raise ValueError(f"The value of strength should in [0.0, 1.0] but is {strength}")
+            raise ValueError(
+                f"The value of strength should in [0.0, 1.0] but is {strength}"
+            )
         chosenPrompt = prompt
         if prompt_embeds is not None:
             chosenPrompt = prompt_embeds
-        chosenNegativePrompt= negative_prompt
+        chosenNegativePrompt = negative_prompt
         if negative_prompt is not None:
             chosenNegativePrompt = negative_prompt_embeds
-        if len(chosenPrompt)!=len(pos):
-            raise ValueError(f"`prompt` and `pos` have to be the same length but are {len(chosenPrompt)} and {len(pos)}.")
-        if len(chosenPrompt)!=len(mask_types):
-            raise ValueError(f"`prompt` and `mask_types` have to be the same length but are {len(chosenPrompt)} and {len(mask_types)}.")
+        if len(chosenPrompt) != len(pos):
+            raise ValueError(
+                f"`prompt` and `pos` have to be the same length but are {len(chosenPrompt)} and {len(pos)}."
+            )
+        if len(chosenPrompt) != len(mask_types):
+            raise ValueError(
+                f"`prompt` and `mask_types` have to be the same length but are {len(chosenPrompt)} and {len(mask_types)}."
+            )
         if height % 8 != 0 or width % 8 != 0:
-            raise ValueError(f"`height` and `width` have to be divisible by 8 but are {height} and {width}.")
+            raise ValueError(
+                f"`height` and `width` have to be divisible by 8 but are {height} and {width}."
+            )
         if not isinstance(pos, list):
             raise ValueError(f"`pos` has to be a list of strings but is {pos}.")
         else:
             for i in pos:
                 if not isinstance(i, str) and not isinstance(i, PIL.Image.Image):
-                    raise ValueError(f"`pos` has to be a list of strings or PIL.Image.Image but is {pos}.")
+                    raise ValueError(
+                        f"`pos` has to be a list of strings or PIL.Image.Image but is {pos}."
+                    )
                 elif isinstance(i, str):
                     pos_base = i.split("-")
                     if len(pos_base) != 2:
@@ -618,7 +723,7 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
                         )
                     else:
                         pos_dev = pos_base[0].split(":")
-                        if len(pos_dev)!=2:
+                        if len(pos_dev) != 2:
                             raise ValueError(
                                 f"`pos` has to be a list of strings with the format `layer:row:col` but is {pos}."
                             )
@@ -639,7 +744,8 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
                                 )
 
         if (callback_steps is None) or (
-            callback_steps is not None and (not isinstance(callback_steps, int) or callback_steps <= 0)
+            callback_steps is not None
+            and (not isinstance(callback_steps, int) or callback_steps <= 0)
         ):
             raise ValueError(
                 f"`callback_steps` has to be a positive integer but is {callback_steps} of type"
@@ -662,7 +768,7 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
                 f" {negative_prompt_embeds}. Please make sure to only forward one of the two."
             )
         if self.controlnet is not None:
-            
+
             if isinstance(self.controlnet, MultiControlNetModel):
                 if isinstance(prompt, list):
                     logger.warning(
@@ -678,19 +784,23 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
                     or is_compiled
                     and isinstance(self.controlnet._orig_mod, ControlNetModel)
                 ):
-                    print('')
+                    print("")
                 elif (
                     isinstance(self.controlnet, MultiControlNetModel)
                     or is_compiled
                     and isinstance(self.controlnet._orig_mod, MultiControlNetModel)
                 ):
                     if not isinstance(image, list):
-                        raise TypeError("For multiple controlnets: `image` must be type `list`")
+                        raise TypeError(
+                            "For multiple controlnets: `image` must be type `list`"
+                        )
 
                     # When `image` is a nested list:
                     # (e.g. [[canny_image_1, pose_image_1], [canny_image_2, pose_image_2]])
                     elif any(isinstance(i, list) for i in image):
-                        raise ValueError("A single batch of multiple conditionings are supported at the moment.")
+                        raise ValueError(
+                            "A single batch of multiple conditionings are supported at the moment."
+                        )
                     elif len(image) != len(self.controlnet.nets):
                         raise ValueError(
                             "For multiple controlnets: `image` must have the same length as the number of controlnets."
@@ -706,18 +816,24 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
                     and isinstance(self.controlnet._orig_mod, ControlNetModel)
                 ):
                     if not isinstance(controlnet_conditioning_scale, float):
-                        raise TypeError("For single controlnet: `controlnet_conditioning_scale` must be type `float`.")
+                        raise TypeError(
+                            "For single controlnet: `controlnet_conditioning_scale` must be type `float`."
+                        )
                 elif (
                     isinstance(self.controlnet, MultiControlNetModel)
                     or is_compiled
                     and isinstance(self.controlnet._orig_mod, MultiControlNetModel)
                 ):
                     if isinstance(controlnet_conditioning_scale, list):
-                        if any(isinstance(i, list) for i in controlnet_conditioning_scale):
-                            raise ValueError("A single batch of multiple conditionings are supported at the moment.")
-                    elif isinstance(controlnet_conditioning_scale, list) and len(controlnet_conditioning_scale) != len(
-                        self.controlnet.nets
-                    ):
+                        if any(
+                            isinstance(i, list) for i in controlnet_conditioning_scale
+                        ):
+                            raise ValueError(
+                                "A single batch of multiple conditionings are supported at the moment."
+                            )
+                    elif isinstance(controlnet_conditioning_scale, list) and len(
+                        controlnet_conditioning_scale
+                    ) != len(self.controlnet.nets):
                         raise ValueError(
                             "For multiple controlnets: When `controlnet_conditioning_scale` is specified as `list`, it must have"
                             " the same length as the number of controlnets"
@@ -725,8 +841,23 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
                 else:
                     assert False
 
-    def prepare_latents(self, batch_size, num_channels_latents, height, width, dtype, device, generator, latents=None):
-        shape = (batch_size, num_channels_latents, height // self.vae_scale_factor, width // self.vae_scale_factor)
+    def prepare_latents(
+        self,
+        batch_size,
+        num_channels_latents,
+        height,
+        width,
+        dtype,
+        device,
+        generator,
+        latents=None,
+    ):
+        shape = (
+            batch_size,
+            num_channels_latents,
+            height // self.vae_scale_factor,
+            width // self.vae_scale_factor,
+        )
         if isinstance(generator, list) and len(generator) != batch_size:
             raise ValueError(
                 f"You have passed a list of generators of length {len(generator)}, but requested an effective batch"
@@ -734,14 +865,26 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
             )
 
         if latents is None:
-            latents = randn_tensor(shape, generator=generator, device=device, dtype=dtype)
+            latents = torch.randn(
+                shape, generator=generator
+            ).to(dtype=dtype, device=device)
         else:
             latents = latents.to(device)
 
         # scale the initial noise by the standard deviation required by the scheduler
         latents = latents * self.scheduler.init_noise_sigma
         return latents
-    def prepare_latents_image(self, image, timestep, batch_size, num_images_per_prompt, dtype, device, generator=None):
+
+    def prepare_latents_image(
+        self,
+        image,
+        timestep,
+        batch_size,
+        num_images_per_prompt,
+        dtype,
+        device,
+        generator=None,
+    ):
         if not isinstance(image, (torch.Tensor, PIL.Image.Image, list)):
             raise ValueError(
                 f"`image` has to be of type `torch.Tensor`, `PIL.Image.Image` or list but is {type(image)}"
@@ -758,7 +901,8 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
 
         if isinstance(generator, list):
             init_latents = [
-                self.vae.encode(image[i : i + 1]).latent_dist.sample(generator[i]) for i in range(batch_size)
+                self.vae.encode(image[i : i + 1]).latent_dist.sample(generator[i])
+                for i in range(batch_size)
             ]
             init_latents = torch.cat(init_latents, dim=0)
         else:
@@ -766,7 +910,10 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
 
         init_latents = self.vae.config.scaling_factor * init_latents
 
-        if batch_size > init_latents.shape[0] and batch_size % init_latents.shape[0] == 0:
+        if (
+            batch_size > init_latents.shape[0]
+            and batch_size % init_latents.shape[0] == 0
+        ):
             # expand init_latents for batch_size
             deprecation_message = (
                 f"You have passed {batch_size} text prompts (`prompt`), but only {init_latents.shape[0]} initial"
@@ -774,10 +921,20 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
                 " that this behavior is deprecated and will be removed in a version 1.0.0. Please make sure to update"
                 " your script to pass as many initial images as text prompts to suppress this warning."
             )
-            deprecate("len(prompt) != len(image)", "1.0.0", deprecation_message, standard_warn=False)
+            deprecate(
+                "len(prompt) != len(image)",
+                "1.0.0",
+                deprecation_message,
+                standard_warn=False,
+            )
             additional_image_per_prompt = batch_size // init_latents.shape[0]
-            init_latents = torch.cat([init_latents] * additional_image_per_prompt, dim=0)
-        elif batch_size > init_latents.shape[0] and batch_size % init_latents.shape[0] != 0:
+            init_latents = torch.cat(
+                [init_latents] * additional_image_per_prompt, dim=0
+            )
+        elif (
+            batch_size > init_latents.shape[0]
+            and batch_size % init_latents.shape[0] != 0
+        ):
             raise ValueError(
                 f"Cannot duplicate `image` of batch size {init_latents.shape[0]} to {batch_size} text prompts."
             )
@@ -785,13 +942,14 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
             init_latents = torch.cat([init_latents], dim=0)
 
         shape = init_latents.shape
-        noise = randn_tensor(shape, generator=generator, device=device, dtype=dtype)
+        noise = torch.randn(shape, generator=generator, device=device, dtype=dtype)
 
         # get latents
         init_latents = self.scheduler.add_noise(init_latents, noise, timestep)
         latents = init_latents
 
         return latents
+
     def get_timesteps(self, num_inference_steps, strength, device):
         # get the original timestep using init_timestep
         init_timestep = min(int(num_inference_steps * strength), num_inference_steps)
@@ -800,6 +958,7 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
         timesteps = self.scheduler.timesteps[t_start * self.scheduler.order :]
 
         return timesteps, num_inference_steps - t_start
+
     @torch.no_grad()
     @replace_example_docstring(EXAMPLE_DOC_STRING)
     def __call__(
@@ -814,8 +973,15 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
         negative_prompt: Optional[Union[str, List[str]]] = None,
         num_images_per_prompt: Optional[int] = 1,
         strength: float = 0.5,
-        loras_apply: Optional[dict]=None,
-        controlnet_image: Optional[Union[torch.FloatTensor, PIL.Image.Image, List[torch.FloatTensor], List[PIL.Image.Image]]] = None,
+        loras_apply: Optional[dict] = None,
+        controlnet_image: Optional[
+            Union[
+                torch.FloatTensor,
+                PIL.Image.Image,
+                List[torch.FloatTensor],
+                List[PIL.Image.Image],
+            ]
+        ] = None,
         controlnet_conditioning_scale: Optional[Union[float, List[float]]] = None,
         image: Optional[Union[torch.FloatTensor, PIL.Image.Image]] = None,
         eta: float = 0.0,
@@ -903,24 +1069,37 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
         width = width or self.unet.config.sample_size * self.vae_scale_factor
         remaining_height = height % 8
         remaining_width = width % 8
-        height+=remaining_height
-        width+=remaining_width
+        height += remaining_height
+        width += remaining_width
         # 1. Check inputs. Raise error if not correct
         self.check_inputs(
-            prompt, strength, height, width, callback_steps, negative_prompt, prompt_embeds, negative_prompt_embeds, pos, mask_types, controlnet_conditioning_scale=controlnet_conditioning_scale, image=controlnet_image
+            prompt,
+            strength,
+            height,
+            width,
+            callback_steps,
+            negative_prompt,
+            prompt_embeds,
+            negative_prompt_embeds,
+            pos,
+            mask_types,
+            controlnet_conditioning_scale=controlnet_conditioning_scale,
+            image=controlnet_image,
         )
-        all_loras=None
+        all_loras = None
         if loras_apply is not None:
-            all_loras={}
+            all_loras = {}
             for i in loras_apply.values():
                 for j in i:
                     if ":" in j:
-                        parts = j.split(":")  # split the string at the ":" index to seperate the multiplier
+                        parts = j.split(
+                            ":"
+                        )  # split the string at the ":" index to seperate the multiplier
                         j = parts[0]  # pick the actual name of the lora
-                    all_loras[j]=None
+                    all_loras[j] = None
             for i in all_loras.keys():
-                all_loras[i]=self.apply_lora(i, 0.0, self.unet.dtype).to('cuda')
-        plen= len(prompt) if prompt is not None  else len(prompt_embeds)
+                all_loras[i] = self.apply_lora(i, 0.0, self.unet.dtype).to("cuda")
+        plen = len(prompt) if prompt is not None else len(prompt_embeds)
         # 2. Define call parameters
         if prompt is not None and isinstance(prompt[0], str):
             batch_size = 1
@@ -934,32 +1113,38 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
         # of the Imagen paper: https://arxiv.org/pdf/2205.11487.pdf . `guidance_scale = 1`
         # corresponds to doing no classifier free guidance.
         do_classifier_free_guidance = guidance_scale > 1.0
-        
+
         # 3. Encode input prompt
         text_embeddings = []
-        bte=None
+        bte = None
         for i in range(plen):
-            pinput=prompt
+            pinput = prompt
             if isinstance(prompt, list):
-                pinput=prompt[i]
-            peinput=prompt_embeds
+                pinput = prompt[i]
+            peinput = prompt_embeds
             if isinstance(prompt_embeds, list):
-                peinput=prompt_embeds[i]
-            ninput=negative_prompt
+                peinput = prompt_embeds[i]
+            ninput = negative_prompt
             if isinstance(negative_prompt, list):
-                ninput=negative_prompt[i]
-            neinput=negative_prompt_embeds
+                ninput = negative_prompt[i]
+            neinput = negative_prompt_embeds
             if isinstance(negative_prompt_embeds, list):
-                neinput=negative_prompt_embeds[i]
+                neinput = negative_prompt_embeds[i]
             one_text_embeddings = self._encode_prompt(
-                pinput, device, num_images_per_prompt, do_classifier_free_guidance, negative_prompt=ninput, prompt_embeds=peinput, negative_prompt_embeds=neinput
+                pinput,
+                device,
+                num_images_per_prompt,
+                do_classifier_free_guidance,
+                negative_prompt=ninput,
+                prompt_embeds=peinput,
+                negative_prompt_embeds=neinput,
             )
-            if i==0:
-                be=one_text_embeddings
+            if i == 0:
+                be = one_text_embeddings
             text_embeddings.append(one_text_embeddings)
         text_embeddings.append(be)
-        image=None
-        if hasattr(self, 'image'):
+        image = None
+        if hasattr(self, "image"):
             image = self.image
         # 4. Prepare timesteps
         self.scheduler.set_timesteps(num_inference_steps, device=device)
@@ -967,12 +1152,20 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
 
         # 5. Prepare latent variables
         num_channels_latents = self.unet.config.in_channels
-        latents=None
+        latents = None
         if image is not None:
-            timesteps, num_inference_steps = self.get_timesteps(num_inference_steps, strength, device)
+            timesteps, num_inference_steps = self.get_timesteps(
+                num_inference_steps, strength, device
+            )
             latent_timestep = timesteps[:1].repeat(batch_size * num_images_per_prompt)
             latents = self.prepare_latents_image(
-                image, latent_timestep, batch_size, num_images_per_prompt, dtype=text_embeddings[0].dtype, device=device,generator=generator,
+                image,
+                latent_timestep,
+                batch_size,
+                num_images_per_prompt,
+                dtype=text_embeddings[0].dtype,
+                device=device,
+                generator=generator,
             )
         else:
             timesteps = self.scheduler.timesteps
@@ -1031,11 +1224,14 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
                 assert False
         # 6. Prepare extra step kwargs. TODO: Logic should ideally just be moved out of the pipeline
         extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
+
         # 7. Denoising loop
         # num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
-        def create_rectangular_mask(height, width, y_start, x_start, block_height, block_width, device='cpu'):
+        def create_rectangular_mask(
+            height, width, y_start, x_start, block_height, block_width, device="cpu"
+        ):
             mask = torch.zeros(height, width, device=device)
-            mask[y_start:y_start + block_height, x_start:x_start + block_width] = 1
+            mask[y_start : y_start + block_height, x_start : x_start + block_width] = 1
             return mask
 
         mask_list = []
@@ -1045,15 +1241,23 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
                 pos_base = pos[i].split("-")
                 pos_start = pos_base[0].split(":")
                 pos_end = pos_base[1].split(":")
-                
+
                 block_height = abs(int(pos_start[1]) - int(pos_end[1])) // 8
                 block_width = abs(int(pos_start[0]) - int(pos_end[0])) // 8
                 y_start = int(pos_start[1]) // 8
                 x_start = int(pos_start[0]) // 8
-                one_filter = create_rectangular_mask(height // 8, width // 8, y_start, x_start, block_height, block_width, device=device)
+                one_filter = create_rectangular_mask(
+                    height // 8,
+                    width // 8,
+                    y_start,
+                    x_start,
+                    block_height,
+                    block_width,
+                    device=device,
+                )
                 # one_filter=one_filter.unsqueeze(0).expand(batch_size, 4, -1, -1).to(torch.float16)
             else:
-                img = pos[i].convert('L').resize((width // 8, height // 8))
+                img = pos[i].convert("L").resize((width // 8, height // 8))
 
                 # Convert image data to a numpy array
                 np_data = np.array(img)
@@ -1066,141 +1270,160 @@ class MultiStableDiffusion(DiffusionPipeline, TextualInversionLoaderMixin, LoraL
                 mask = torch.from_numpy(np_data)
 
                 # Convert the numpy array to a PyTorch tensor
-                one_filter = mask.to('cuda')
+                one_filter = mask.to("cuda")
                 # one_filter = one_filter.unsqueeze(0)
                 # one_filter = one_filter.unsqueeze(0).expand(batch_size, 4, -1, -1).to(torch.float16)
 
             mask_list.append(one_filter)
 
         # For each pixel
-        for x in range(height//8):
-            for y in range(width//8):
+        for x in range(height // 8):
+            for y in range(width // 8):
                 # Get the indices of the masks that are applied to this pixel
-                applied_mask_indices = [idx for idx, mask in enumerate(mask_list) if mask[x, y] > 0]
+                applied_mask_indices = [
+                    idx for idx, mask in enumerate(mask_list) if mask[x, y] > 0
+                ]
 
                 if applied_mask_indices:
                     mask_strengths = [mask_types[idx] for idx in applied_mask_indices]
                     # Calculate the weights for the applied masks
-                    totalM=0
-                    multi=len(mask_strengths)>2
-                    pxvals=dict()
+                    totalM = 0
+                    multi = len(mask_strengths) > 2
+                    pxvals = dict()
                     for i in applied_mask_indices:
-                        val=mask_list[i][x, y].item()
-                        val=val*mask_types[i]
-                        pxvals[i]=val
-                        totalM+=val
-                    total_weights=0
+                        val = mask_list[i][x, y].item()
+                        val = val * mask_types[i]
+                        pxvals[i] = val
+                        totalM += val
+                    total_weights = 0
                     for i in applied_mask_indices:
-                        w=(pxvals[i]/totalM)
+                        w = pxvals[i] / totalM
                         mask_list[i][x, y] *= w
-                        total_weights+=w
-                    if total_weights>1:
-                        mask_list[applied_mask_indices[0]][x, y] -= total_weights-1
-                    elif total_weights<1:
-                        mask_list[applied_mask_indices[0]][x, y] += 1-total_weights
+                        total_weights += w
+                    if total_weights > 1:
+                        mask_list[applied_mask_indices[0]][x, y] -= total_weights - 1
+                    elif total_weights < 1:
+                        mask_list[applied_mask_indices[0]][x, y] += 1 - total_weights
                 else:
-                    raise ValueError(
-                            "unoccupied pixel in the mask. {x}, {y}"
-                        )
-        colorful_images=[]
+                    raise ValueError("unoccupied pixel in the mask. {x}, {y}")
+        colorful_images = []
         for i in range(len(mask_list)):
             rgb_image = np.zeros((mask_list[i].shape[0], mask_list[i].shape[1], 3))
 
             # Fill the red channel with value 1
-            rgb_image[:,:,i] = 1
+            rgb_image[:, :, i] = 1
 
             # Create an RGBA image by adding the normalized grayscale image as the alpha channel
             rgba_image = np.zeros((mask_list[i].shape[0], mask_list[i].shape[1], 4))
-            rgba_image[:,:,:3] = rgb_image
+            rgba_image[:, :, :3] = rgb_image
             normalized_image = mask_list[i].cpu().numpy()
-            rgba_image[:,:,3] = normalized_image
+            rgba_image[:, :, 3] = normalized_image
 
             # Convert to range 0-255 and type uint8
             rgba_image = (rgba_image * 255).astype(np.uint8)
 
             # Convert the numpy array to a PIL image and save it
             colorful_images.append(PIL.Image.fromarray(rgba_image))
-            mask_list[i] = mask_list[i].unsqueeze(0).expand(batch_size, 4, -1, -1).to(torch.float16)
-            torchvision.transforms.functional.to_pil_image(mask_list[i][0]*256).save(str(i)+".png")
-        final_color=colorful_images[0].convert('RGBA')
+            mask_list[i] = (
+                mask_list[i]
+                .unsqueeze(0)
+                .expand(batch_size, 4, -1, -1)
+                .to(torch.float16)
+            )
+            torchvision.transforms.functional.to_pil_image(mask_list[i][0] * 256).save(
+                str(i) + ".png"
+            )
+        final_color = colorful_images[0].convert("RGBA")
         for i in range(len(colorful_images)):
-            if i==0:
+            if i == 0:
                 continue
-            final_color=PIL.Image.alpha_composite(final_color, colorful_images[i])
+            final_color = PIL.Image.alpha_composite(final_color, colorful_images[i])
         final_color.save("final.png")
         for i, t in enumerate(self.progress_bar(timesteps)):
-                # expand the latents if we are doing classifier free guidance
-                latent_model_input = torch.cat([latents] * 2) if do_classifier_free_guidance else latents
-                latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
-                # predict the noise residual
+            # expand the latents if we are doing classifier free guidance
+            latent_model_input = (
+                torch.cat([latents] * 2) if do_classifier_free_guidance else latents
+            )
+            latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
+            # predict the noise residual
+            noise_preds = []
+            for i in range(len(mask_list)):
+                if loras_apply is not None and loras_apply.get(i) is not None:
+                    # self.load_lora_weights(loras_apply.get(i))
+                    for j in loras_apply.get(i):
+                        num_apply = 1.0
+                        if ":" in j:
+                            parts = j.split(
+                                ":"
+                            )  # split the string at the ":" index to seperate the multiplier
+                            j = parts[0]  # pick the actual name of the lora
+                            num_apply = float(parts[1])  # pick the multiplier
+                        all_loras[j].alpha = num_apply
+                noise_pred = None
+                if controlnet_image is not None:
+                    down_block_res_samples, mid_block_res_sample = self.controlnet(
+                        latent_model_input,
+                        t,
+                        encoder_hidden_states=text_embeddings[i],
+                        controlnet_cond=controlnet_image,
+                        conditioning_scale=controlnet_conditioning_scale,
+                        guess_mode=False,
+                        return_dict=False,
+                    )
+                    noise_pred = self.unet(
+                        latent_model_input,
+                        t,
+                        encoder_hidden_states=text_embeddings[i],
+                        cross_attention_kwargs=cross_attention_kwargs,
+                        down_block_additional_residuals=down_block_res_samples,
+                        mid_block_additional_residual=mid_block_res_sample,
+                        return_dict=False,
+                    )[0]
+                else:
+                    noise_pred = self.unet(
+                        latent_model_input, t, encoder_hidden_states=text_embeddings[i]
+                    ).sample
+                noise_preds.append(noise_pred)
+                if loras_apply is not None and loras_apply.get(i) is not None:
+                    for j in loras_apply.get(i):
+                        if ":" in j:
+                            parts = j.split(
+                                ":"
+                            )  # split the string at the ":" index to seperate the multiplier
+                            j = parts[0]  # pick the actual name of the lora
+                        all_loras[j].alpha = 0.0
+            # perform guidance
+            if do_classifier_free_guidance:
+                noise_pred_unconds = []
+                noise_pred_texts = []
+                for i in range(len(mask_list)):
+                    noise_pred_uncond, noise_pred_text = noise_preds[i].chunk(2)
+                    noise_pred_unconds.append(noise_pred_uncond)
+                    noise_pred_texts.append(noise_pred_text)
+
+                result = None
                 noise_preds = []
                 for i in range(len(mask_list)):
-                    if loras_apply is not None and loras_apply.get(i) is not None:
-                        # self.load_lora_weights(loras_apply.get(i))
-                        for j in loras_apply.get(i):
-                            num_apply=1.0
-                            if ":" in j:
-                                parts = j.split(":")  # split the string at the ":" index to seperate the multiplier
-                                j = parts[0]  # pick the actual name of the lora
-                                num_apply = float(parts[1])  # pick the multiplier
-                            all_loras[j].alpha=num_apply
-                    noise_pred=None
-                    if controlnet_image is not None:
-                        down_block_res_samples, mid_block_res_sample = self.controlnet(
-                            latent_model_input,
-                            t,
-                            encoder_hidden_states=text_embeddings[i],
-                            controlnet_cond=controlnet_image,
-                            conditioning_scale=controlnet_conditioning_scale,
-                            guess_mode=False,
-                            return_dict=False,
-                        )
-                        noise_pred=self.unet(
-                            latent_model_input, 
-                            t, 
-                            encoder_hidden_states=text_embeddings[i],
-                            cross_attention_kwargs=cross_attention_kwargs,
-                            down_block_additional_residuals=down_block_res_samples,
-                            mid_block_additional_residual=mid_block_res_sample,
-                            return_dict=False,
-                        )[0]
-                    else:
-                        noise_pred = self.unet(latent_model_input, t, encoder_hidden_states=text_embeddings[i]).sample
+                    noise_pred = noise_pred_unconds[i] + guidance_scale * (
+                        noise_pred_texts[i] - noise_pred_unconds[i]
+                    )
                     noise_preds.append(noise_pred)
-                    if loras_apply is not None and loras_apply.get(i) is not None:
-                        for j in loras_apply.get(i):
-                            if ":" in j:
-                                parts = j.split(":")  # split the string at the ":" index to seperate the multiplier
-                                j = parts[0]  # pick the actual name of the lora
-                            all_loras[j].alpha=0.0
-                # perform guidance
-                if do_classifier_free_guidance:
-                    noise_pred_unconds = []
-                    noise_pred_texts = []
-                    for i in range(len(mask_list)):
-                      noise_pred_uncond, noise_pred_text = noise_preds[i].chunk(2)
-                      noise_pred_unconds.append(noise_pred_uncond)
-                      noise_pred_texts.append(noise_pred_text)
-                    
-                    result = None
-                    noise_preds = []
-                    for i in range(len(mask_list)):
-                      noise_pred = noise_pred_unconds[i] + guidance_scale * (noise_pred_texts[i] - noise_pred_unconds[i])
-                      noise_preds.append(noise_pred)
-                    result = noise_preds[0] * mask_list[0]
-                    for i in range(1, len(mask_list)):
-                      result += noise_preds[i] * mask_list[i]
+                result = noise_preds[0] * mask_list[0]
+                for i in range(1, len(mask_list)):
+                    result += noise_preds[i] * mask_list[i]
 
-                    #noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
+                # noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
 
-                    # compute the previous noisy sample x_t -> x_t-1
-                    latents = self.scheduler.step(result, t, latents, **extra_step_kwargs).prev_sample
-                    if i==15:
-                        tmg=self.decode_latents(latents)
-                        tmg.save("tmg.png")
-                    # call the callback, if provided
-                    if callback is not None and i % callback_steps == 0:
-                        callback(i, t, latents)
+                # compute the previous noisy sample x_t -> x_t-1
+                latents = self.scheduler.step(
+                    result, t, latents, **extra_step_kwargs
+                ).prev_sample
+                if i == 15:
+                    tmg = self.decode_latents(latents)
+                    tmg.save("tmg.png")
+                # call the callback, if provided
+                if callback is not None and i % callback_steps == 0:
+                    callback(i, t, latents)
 
         if output_type == "latent":
             image = latents
