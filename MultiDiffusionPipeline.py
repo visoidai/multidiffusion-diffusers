@@ -23,11 +23,7 @@ from transformers import CLIPImageProcessor, CLIPTextModel, CLIPTokenizer
 import torchvision
 from diffusers import DiffusionPipeline, ControlNetModel
 from diffusers.configuration_utils import FrozenDict
-from diffusers.loaders import (
-    LoraLoaderMixin,
-    TextualInversionLoaderMixin,
-    FromCkptMixin,
-)
+from diffusers.loaders import LoraLoaderMixin, TextualInversionLoaderMixin
 from diffusers.image_processor import VaeImageProcessor
 from diffusers.models import AutoencoderKL, UNet2DConditionModel
 from diffusers.models.controlnet import ControlNetOutput
@@ -46,7 +42,6 @@ from diffusers.utils import (
     is_accelerate_available,
     is_accelerate_version,
     logging,
-    randn_tensor,
     replace_example_docstring,
     PIL_INTERPOLATION,
 )
@@ -134,7 +129,7 @@ class MultiControlNetModel(ModelMixin):
 
 
 class MultiStableDiffusion(
-    DiffusionPipeline, TextualInversionLoaderMixin, LoraLoaderMixin, FromCkptMixin
+    DiffusionPipeline, TextualInversionLoaderMixin, LoraLoaderMixin
 ):
     r"""
     Pipeline for text-to-image generation using Stable Diffusion.
@@ -145,7 +140,6 @@ class MultiStableDiffusion(
     In addition the pipeline inherits the following loading methods:
         - *Textual-Inversion*: [`loaders.TextualInversionLoaderMixin.load_textual_inversion`]
         - *LoRA*: [`loaders.LoraLoaderMixin.load_lora_weights`]
-        - *Ckpt*: [`loaders.FromCkptMixin.from_ckpt`]
 
     as well as the following saving methods:
         - *LoRA*: [`loaders.LoraLoaderMixin.save_lora_weights`]
@@ -450,16 +444,28 @@ class MultiStableDiffusion(
         `pipeline.enable_sequential_cpu_offload()` the execution device can only be inferred from Accelerate's module
         hooks.
         """
-        if not hasattr(self.unet, "_hf_hook"):
-            return self.device
-        for module in self.unet.modules():
-            if (
-                hasattr(module, "_hf_hook")
-                and hasattr(module._hf_hook, "execution_device")
-                and module._hf_hook.execution_device is not None
-            ):
-                return torch.device(module._hf_hook.execution_device)
-        return self.device
+        # if not hasattr(self.unet, "_hf_hook"):
+        #     return self.device
+        # for module in self.unet.modules():
+        #     if (
+        #         hasattr(module, "_hf_hook")
+        #         and hasattr(module._hf_hook, "execution_device")
+        #         and module._hf_hook.execution_device is not None
+        #     ):
+        #         return torch.device(module._hf_hook.execution_device)
+        # return self.device
+        device = "cpu"
+        dtype = torch.float16
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+            if torch.cuda.is_bf16_supported():
+                dtype = torch.bfloat16
+        elif torch.backends.mps.is_available():
+            device = torch.device("mps")
+            # dtype = torch.float32
+        else:
+            raise ValueError("WARNING: need to run on GPU")
+        return device
 
     def _encode_prompt(
         self,
@@ -645,7 +651,7 @@ class MultiStableDiffusion(
 
     def prepare_extra_step_kwargs(self, generator, eta):
         # prepare extra kwargs for the scheduler step, since not all schedulers have the same signature
-        # eta (η) is only used with the DDIMScheduler, it will be ignored for other schedulers.
+        # eta (η) is only used with the DDIMScheduler, it will be ignored for others.
         # eta corresponds to η in DDIM paper: https://arxiv.org/abs/2010.02502
         # and should be between [0, 1]
 
@@ -859,9 +865,9 @@ class MultiStableDiffusion(
             )
 
         if latents is None:
-            latents = randn_tensor(
-                shape, generator=generator, device=device, dtype=dtype
-            )
+            latents = torch.randn(
+                shape, generator=generator
+            ).to(dtype=dtype, device=device)
         else:
             latents = latents.to(device)
 
@@ -936,7 +942,7 @@ class MultiStableDiffusion(
             init_latents = torch.cat([init_latents], dim=0)
 
         shape = init_latents.shape
-        noise = randn_tensor(shape, generator=generator, device=device, dtype=dtype)
+        noise = torch.randn(shape, generator=generator, device=device, dtype=dtype)
 
         # get latents
         init_latents = self.scheduler.add_noise(init_latents, noise, timestep)
