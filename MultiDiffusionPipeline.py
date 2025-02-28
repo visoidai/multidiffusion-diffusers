@@ -865,9 +865,9 @@ class MultiStableDiffusion(
             )
 
         if latents is None:
-            latents = torch.randn(
-                shape, generator=generator
-            ).to(dtype=dtype, device=device)
+            latents = torch.randn(shape, generator=generator).to(
+                dtype=dtype, device=device
+            )
         else:
             latents = latents.to(device)
 
@@ -1307,11 +1307,15 @@ class MultiStableDiffusion(
                 else:
                     raise ValueError("unoccupied pixel in the mask. {x}, {y}")
         colorful_images = []
+        # Define a palette of colors (as RGB tuples). Extend this list as needed.
+        palette = [(1, 0, 0), (0, 1, 0), (0, 0, 1), (1, 1, 0), (0, 1, 1), (1, 0, 1)]
         for i in range(len(mask_list)):
             rgb_image = np.zeros((mask_list[i].shape[0], mask_list[i].shape[1], 3))
-
-            # Fill the red channel with value 1
-            rgb_image[:, :, i] = 1
+            # Select a color from the palette (cycle through if there are more masks than colors)
+            color = palette[i % len(palette)]
+            rgb_image[:, :, 0] = color[0]
+            rgb_image[:, :, 1] = color[1]
+            rgb_image[:, :, 2] = color[2]
 
             # Create an RGBA image by adding the normalized grayscale image as the alpha channel
             rgba_image = np.zeros((mask_list[i].shape[0], mask_list[i].shape[1], 4))
@@ -1322,7 +1326,7 @@ class MultiStableDiffusion(
             # Convert to range 0-255 and type uint8
             rgba_image = (rgba_image * 255).astype(np.uint8)
 
-            # Convert the numpy array to a PIL image and save it
+            # Convert the numpy array to a PIL Image and add it to the list
             colorful_images.append(PIL.Image.fromarray(rgba_image))
             mask_list[i] = (
                 mask_list[i]
