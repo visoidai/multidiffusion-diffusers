@@ -13,6 +13,8 @@ import os
 
 from MultiDiffusionPipeline import MultiStableDiffusion
 
+from mask_positions import get_mask_positions
+
 # this was never tested lol
 
 
@@ -58,19 +60,23 @@ for i in range(len(prompt)):
 
 # Define 4 mask positions.
 # (Format: "x0:y0-x1:y1" in pixels; adjust these coordinates as needed for your image)
-pos = [
-    "0:0-256:256",  # Top-left quarter
-    "256:0-512:256",  # Top-right quarter
-    "0:256-256:512",  # Bottom-left quarter
-    "256:256-512:512",  # Bottom-right quarter
-]
+# pos = [
+#     "0:0-256:256",  # Top-left quarter
+#     "256:0-512:256",  # Top-right quarter
+#     "0:256-256:512",  # Bottom-left quarter
+#     "256:256-512:512",  # Bottom-right quarter
+# ]
+dirname = os.path.dirname(__file__)
+filename = os.path.join(dirname, "Untitled.png")
+mask_positions = get_mask_positions(filename)
+pos = list(mask_positions.values())
+print(list(mask_positions.values()))
 
 # Define 4 mask types (these serve as strengths, similar to z-index values)
 mask_types = [1, 12, 5, 8]
 
 # Load an image to be used as one of the mask inputs (for the one non-rectangular mask if needed)
-dirname = os.path.dirname(__file__)
-filename = os.path.join(dirname, "Untitled.png")
+
 with open(filename, "rb") as buffer:
     buffer.seek(0)
     image_bytes = buffer.read()
